@@ -316,3 +316,30 @@ ENOKI_TEST(array_float_04_test09_mask_packet) { test09_packet_from_struct<float,
 ENOKI_TEST(array_float_08_test09_mask_packet) { test09_packet_from_struct<float,   8>();  }
 ENOKI_TEST(array_float_16_test09_mask_packet) { test09_packet_from_struct<float,   16>();  }
 ENOKI_TEST(array_float_32_test09_mask_packet) { test09_packet_from_struct<float,   32>();  }
+
+ENOKI_TEST(test10_arbitrary_scalar) {
+    using GPSCoord2P       = enoki::Packet<GPSCoord2<float>>;
+    using GPSCoord2PArray  = DynamicArray<GPSCoord2P>;
+
+    GPSCoord2PArray array;
+
+    set_slices(array, 13);
+
+    assert(slices(array) == 13);
+
+    for (size_t i = 0; i < slices(array); ++i) {
+        auto&& s = slice(array, i);
+	s.time = i;
+	s.pos[0] = 2*i;
+	s.pos[1] = i;
+	s.reliable = true;
+    }
+
+    for (size_t i = 0; i < slices(array); ++i) {
+        auto&& s = slice(array, i);
+	assert(s.time == i);
+	assert(s.pos[0] == i*2);
+	assert(s.pos[1] == i);
+	assert(s.reliable == true);
+    }
+}

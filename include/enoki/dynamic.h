@@ -24,6 +24,13 @@
 
 NAMESPACE_BEGIN(enoki)
 
+/// Check whether the scalar type of this type is supported.
+template <typename T>
+constexpr bool is_supported_scalar = !std::is_class<enoki::scalar_t<T>>::value;
+
+template <typename T>
+using enable_if_supported_t = enable_if_t<is_supported_scalar<T>>;
+
 template <typename Packet_>
 struct DynamicArrayReference : ArrayBase<value_t<Packet_>, DynamicArrayReference<Packet_>> {
     using Base = ArrayBase<value_t<Packet_>, DynamicArrayReference<Packet_>>;
@@ -60,7 +67,7 @@ struct DynamicArrayImpl : ArrayBase<value_t<Packet_>, Derived_> {
     using Size                                = uint32_t;
     using Base                                = ArrayBase<value_t<Packet_>, Derived_>;
     using Packet                              = Packet_;
-    using IndexPacket                         = uint_array_t<array_t<Packet_>, false>;
+    using IndexPacket                         = uint_array_t<typename std::conditional<is_supported_scalar<Packet_>, array_t<Packet_>, double>::type, false>;
     using IndexScalar                         = scalar_t<IndexPacket>;
     using PacketHolder                        = std::unique_ptr<Packet[]>;
 
@@ -775,8 +782,11 @@ struct DynamicArrayImpl : ArrayBase<value_t<Packet_>, Derived_> {
             throw std::runtime_error("Can't resize a mapped dynamic array!");
 
         using CoeffValue = std::conditional_t<IsMask, bool, Value>;
+        CoeffValue scalar;
+	if constexpr(is_supported_scalar<Packet>) {
+            scalar = (m_size == 1) ? coeff(0) : zero<CoeffValue>();
+	}
 
-        CoeffValue scalar = (m_size == 1) ? coeff(0) : zero<CoeffValue>();
         size_t n_packets = (size + PacketSize - 1) / PacketSize;
 
         if (n_packets > packets_allocated()) {
@@ -789,21 +799,27 @@ struct DynamicArrayImpl : ArrayBase<value_t<Packet_>, Derived_> {
                               n_packets * sizeof(Packet));
         }
 
-        if (m_size == 1) {
-            /* Resizing a scalar array -- broadcast. */
-            Packet p(scalar);
-            for (size_t i = 0; i < n_packets; ++i)
-                m_packets[i] = p;
-        } else if (m_size == 0) {
-            /* Potentially initialize array contents with NaNs */
-            #if !defined(NDEBUG)
+	if constexpr(is_supported_scalar<Packet>) {
+
+            if (m_size == 1) {
+                /* Resizing a scalar array -- broadcast. */
+                Packet p(scalar);
                 for (size_t i = 0; i < n_packets; ++i)
-                    new (&m_packets[i]) Packet();
-            #endif
-        }
+                    m_packets[i] = p;
+            } else if (m_size == 0) {
+                /* Potentially initialize array contents with NaNs */
+                #if !defined(NDEBUG)
+                    for (size_t i = 0; i < n_packets; ++i)
+                        new (&m_packets[i]) Packet();
+                #endif
+            }
+	}
 
         m_size = (Size) size;
-        clean_trailing_();
+
+	if constexpr(is_supported_scalar<Packet>) {
+            clean_trailing_();
+	}
     }
 
     // Clear the unused portion of a potential trailing partial packet
